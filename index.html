@@ -2,201 +2,201 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>우편물 자동 분류 시스템</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>우편물 분류 파트너 - 크롭 인식</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@400;600;700&display=swap');
-        body { font-family: 'Pretendard', sans-serif; }
-        .scanning-line {
-            height: 2px;
-            background: linear-gradient(to right, transparent, #3b82f6, transparent);
-            animation: scan 2s linear infinite;
+        body { font-family: 'Pretendard', sans-serif; touch-action: none; }
+        .crop-overlay {
             position: absolute;
-            width: 100%;
-            z-index: 10;
-        }
-        @keyframes scan {
-            0% { top: 0; }
-            100% { top: 100%; }
+            border: 2px solid #3b82f6;
+            background: rgba(59, 130, 246, 0.2);
+            pointer-events: none;
+            display: none;
+            z-index: 50;
         }
     </style>
 </head>
-<body class="bg-slate-50 text-slate-900 min-h-screen">
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col">
 
-    <div class="max-w-md mx-auto p-4">
-        <!-- Header -->
-        <header class="text-center mb-6 mt-4">
-            <div class="inline-flex items-center justify-center w-14 h-14 bg-blue-600 rounded-2xl shadow-lg shadow-blue-200 mb-3">
-                <i data-lucide="mail" class="text-white w-8 h-8"></i>
+    <!-- Header -->
+    <header class="p-6 text-center">
+        <div class="inline-flex items-center justify-center w-12 h-12 bg-blue-600 rounded-xl mb-3 shadow-lg shadow-blue-900/20">
+            <i data-lucide="scan-text" class="text-white w-6 h-6"></i>
+        </div>
+        <h1 class="text-xl font-bold">영역 선택 분류기</h1>
+        <p class="text-slate-500 text-xs mt-1">글자 부분을 드래그하여 인식하세요.</p>
+    </header>
+
+    <!-- Main Viewport -->
+    <main class="flex-1 relative flex items-center justify-center bg-black">
+        
+        <!-- Camera View -->
+        <video id="video" autoPlay playsInline class="absolute inset-0 w-full h-full object-cover opacity-60"></video>
+        
+        <!-- Instruction Overlay -->
+        <div id="instruction" class="absolute top-4 left-1/2 -translate-x-1/2 bg-black/60 px-4 py-2 rounded-full text-[11px] font-medium border border-white/10 z-20">
+            인식할 글자 위를 드래그하세요
+        </div>
+
+        <!-- Selection Canvas (Interaction Layer) -->
+        <canvas id="interaction-canvas" class="absolute inset-0 w-full h-full z-30 cursor-crosshair"></canvas>
+        
+        <!-- Visual Crop Box -->
+        <div id="crop-box" class="crop-overlay"></div>
+
+        <!-- Processing UI -->
+        <div id="state-processing" class="hidden absolute inset-0 z-40 bg-black/80 flex flex-col items-center justify-center text-center p-8">
+            <div class="w-12 h-12 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin mb-4"></div>
+            <p class="font-bold">선택 영역 분석 중...</p>
+        </div>
+
+        <!-- Result Card -->
+        <div id="state-result" class="hidden absolute bottom-0 left-0 right-0 z-50 bg-white text-slate-900 rounded-t-[2rem] p-8 animate-in slide-in-from-bottom duration-300">
+            <div class="flex justify-between items-start mb-6">
+                <div>
+                    <span id="res-dept" class="bg-blue-600 text-white text-[10px] font-black px-2.5 py-1 rounded-md uppercase mb-2 inline-block tracking-tighter">
+                        부서명
+                    </span>
+                    <h2 id="res-sender" class="text-2xl font-bold leading-tight">발송처 정보</h2>
+                </div>
+                <button onclick="reset()" class="p-2 bg-slate-100 rounded-full text-slate-400">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
             </div>
-            <h1 class="text-2xl font-bold text-slate-800">우편물 분류 파트너</h1>
-            <p class="text-slate-500 text-sm mt-1">AI가 우편물을 분석하여 담당 부서를 찾아줍니다.</p>
-        </header>
-
-        <!-- Main Card -->
-        <main class="bg-white rounded-[2.5rem] shadow-2xl shadow-slate-200 overflow-hidden border border-slate-100 relative">
             
-            <!-- Camera/Preview Viewport -->
-            <div id="viewport" class="relative aspect-[3/4] bg-slate-900 flex items-center justify-center overflow-hidden">
-                
-                <!-- Initial State -->
-                <div id="state-idle" class="flex flex-col items-center gap-4 text-center px-6">
-                    <div id="camera-error" class="hidden text-red-400 text-sm mb-2 bg-red-950/30 p-3 rounded-xl border border-red-900/30">
-                        <i data-lucide="alert-triangle" class="w-5 h-5 mx-auto mb-1"></i>
-                        <span id="error-message">카메라 접근 권한이 없거나 보안 연결이 필요합니다.</span>
-                    </div>
-                    <button onclick="startCamera()" class="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-2xl font-bold flex items-center gap-3 transition-all transform active:scale-95 shadow-xl shadow-blue-100">
-                        <i data-lucide="camera" class="w-5 h-5"></i> 카메라 시작하기
-                    </button>
-                    <p class="text-slate-500 text-[11px] mt-2 italic">웹 브라우저의 카메라 권한 허용이 필요합니다.</p>
-                </div>
+            <p id="res-summary" class="text-sm text-slate-500 mb-8 leading-relaxed italic border-l-2 border-slate-200 pl-4">
+                요약 내용이 여기에 표시됩니다.
+            </p>
 
-                <!-- Streaming State -->
-                <div id="state-streaming" class="hidden w-full h-full">
-                    <video id="video" autoPlay playsInline class="w-full h-full object-cover"></video>
-                    <div class="scanning-line"></div>
-                    <div class="absolute inset-0 border-[20px] border-black/20 pointer-events-none"></div>
-                    <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <div class="w-64 h-80 border-2 border-dashed border-white/50 rounded-2xl"></div>
-                    </div>
-                    <button onclick="captureAndAnalyze()" class="absolute bottom-8 left-1/2 -translate-x-1/2 w-20 h-20 bg-white rounded-full p-1 shadow-2xl active:scale-90 transition-transform">
-                        <div class="w-full h-full rounded-full border-4 border-slate-900 flex items-center justify-center">
-                            <div class="w-12 h-12 bg-blue-600 rounded-full"></div>
-                        </div>
-                    </button>
-                </div>
-
-                <!-- Processing State -->
-                <div id="state-processing" class="hidden flex flex-col items-center gap-5 text-white text-center p-8">
-                    <div class="relative">
-                        <div class="w-16 h-16 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div>
-                        <i data-lucide="search" class="absolute inset-0 m-auto w-6 h-6 text-blue-400"></i>
-                    </div>
-                    <div>
-                        <p class="text-xl font-bold">우편물 분석 중...</p>
-                        <p class="text-blue-300/80 text-sm mt-1 font-medium">AI가 텍스트를 정밀 분석하고 있습니다</p>
-                    </div>
-                </div>
-
-                <!-- Result State -->
-                <div id="state-result" class="hidden absolute inset-0 bg-white p-8 overflow-y-auto">
-                    <div class="flex items-center gap-2 text-emerald-600 font-bold mb-6">
-                        <i data-lucide="check-circle-2" class="w-5 h-5"></i> 분석 완료
-                    </div>
-
-                    <div class="space-y-6">
-                        <div>
-                            <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">발송처</label>
-                            <p id="res-sender" class="text-xl font-extrabold text-slate-800 leading-tight">-</p>
-                        </div>
-                        <div>
-                            <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">배정 부서</label>
-                            <div id="res-dept" class="inline-flex items-center bg-blue-600 text-white px-4 py-1.5 rounded-full font-bold text-sm shadow-md shadow-blue-100">
-                                -
-                            </div>
-                        </div>
-                        <div>
-                            <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">내용 요약</label>
-                            <div class="bg-slate-50 border border-slate-100 rounded-2xl p-4">
-                                <p id="res-summary" class="text-slate-600 text-sm leading-relaxed italic">-</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="mt-10 space-y-3">
-                        <button onclick="sendEmail()" class="w-full bg-slate-900 hover:bg-black text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-3 transition-colors">
-                            <i data-lucide="send" class="w-5 h-5"></i> 이메일 알림 전송
-                        </button>
-                        <button onclick="reset()" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-600 py-4 rounded-2xl font-bold flex items-center justify-center gap-3 transition-colors text-sm">
-                            <i data-lucide="refresh-cw" class="w-4 h-4"></i> 다시 스캔하기
-                        </button>
-                    </div>
-                </div>
+            <div class="grid grid-cols-2 gap-3">
+                <button onclick="sendEmail()" class="bg-slate-900 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2">
+                    <i data-lucide="mail" class="w-4 h-4"></i> 알림 전송
+                </button>
+                <button onclick="reset()" class="bg-slate-100 text-slate-600 py-4 rounded-2xl font-bold flex items-center justify-center gap-2">
+                    <i data-lucide="refresh-cw" class="w-4 h-4"></i> 다시 스캔
+                </button>
             </div>
-        </main>
+        </div>
+    </main>
 
-        <footer class="mt-8 px-4 text-center">
-            <div class="inline-flex items-center gap-2 text-slate-400 text-[10px] font-bold tracking-widest uppercase bg-white py-2 px-4 rounded-full border border-slate-100">
-                Powered by Gemini 2.5 Flash
-            </div>
-        </footer>
-    </div>
-
-    <canvas id="canvas" class="hidden"></canvas>
+    <canvas id="crop-canvas" class="hidden"></canvas>
 
     <script>
-        const apiKey = ""; 
+        const apiKey = ""; // API 키 입력 필요
         const DEPARTMENTS = ['회계부', '인사부', '영업부', '총무부', 'IT지원팀'];
-        
-        let stream = null;
-        let currentResult = null;
 
         const video = document.getElementById('video');
-        const canvas = document.getElementById('canvas');
+        const interactionCanvas = document.getElementById('interaction-canvas');
+        const cropCanvas = document.getElementById('crop-canvas');
+        const cropBox = document.getElementById('crop-box');
         const states = {
-            idle: document.getElementById('state-idle'),
-            streaming: document.getElementById('state-streaming'),
             processing: document.getElementById('state-processing'),
-            result: document.getElementById('state-result')
+            result: document.getElementById('state-result'),
+            instruction: document.getElementById('instruction')
         };
-        const cameraError = document.getElementById('camera-error');
-        const errorMessage = document.getElementById('error-message');
+
+        let startX, startY, isDragging = false;
+        let currentResult = null;
 
         lucide.createIcons();
 
-        function showState(stateName) {
-            Object.keys(states).forEach(key => {
-                states[key].classList.toggle('hidden', key !== stateName);
-            });
-        }
-
-        async function startCamera() {
-            cameraError.classList.add('hidden');
+        // 1. Camera Setup
+        async function init() {
             try {
-                // 엄격한 HTTPS 체크 대신, 사용 가능한지 직접 시도
-                const constraints = {
-                    video: { 
-                        facingMode: 'environment', 
-                        width: { ideal: 1280 }, 
-                        height: { ideal: 720 } 
-                    }
-                };
-
-                stream = await navigator.mediaDevices.getUserMedia(constraints);
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment' }
+                });
                 video.srcObject = stream;
-                showState('streaming');
+                resizeCanvas();
             } catch (err) {
-                console.error("Camera access error:", err);
-                cameraError.classList.remove('hidden');
-                
-                if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
-                    errorMessage.innerHTML = "<strong>보안 에러:</strong> 카메라 기능은 HTTPS 주소에서만 작동합니다.<br>파일을 온라인 서버(Netlify 등)에 올려서 확인해 주세요.";
-                } else {
-                    errorMessage.innerText = "카메라 권한이 거부되었습니다. 브라우저 설정에서 카메라 접근을 허용해 주세요.";
-                }
+                alert("카메라를 켤 수 없습니다. HTTPS 환경인지 확인해주세요.");
             }
         }
 
-        async function captureAndAnalyze() {
-            if (!video.videoWidth) return;
-            const context = canvas.getContext('2d');
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            context.drawImage(video, 0, 0);
-            const imageData = canvas.toDataURL('image/png').split(',')[1];
+        function resizeCanvas() {
+            interactionCanvas.width = window.innerWidth;
+            interactionCanvas.height = window.innerHeight;
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+
+        // 2. Drag Interaction
+        interactionCanvas.addEventListener('mousedown', startDrag);
+        interactionCanvas.addEventListener('touchstart', (e) => startDrag(e.touches[0]));
+
+        window.addEventListener('mousemove', drag);
+        window.addEventListener('touchmove', (e) => drag(e.touches[0]));
+
+        window.addEventListener('mouseup', endDrag);
+        window.addEventListener('touchend', endDrag);
+
+        function startDrag(e) {
+            if (currentResult) return;
+            isDragging = true;
+            startX = e.clientX;
+            startY = e.clientY;
+            cropBox.style.display = 'block';
+            cropBox.style.left = startX + 'px';
+            cropBox.style.top = startY + 'px';
+            cropBox.style.width = '0px';
+            cropBox.style.height = '0px';
+        }
+
+        function drag(e) {
+            if (!isDragging) return;
+            const currentX = e.clientX;
+            const currentY = e.clientY;
             
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
+            const width = currentX - startX;
+            const height = currentY - startY;
+
+            cropBox.style.width = Math.abs(width) + 'px';
+            cropBox.style.height = Math.abs(height) + 'px';
+            cropBox.style.left = (width > 0 ? startX : currentX) + 'px';
+            cropBox.style.top = (height > 0 ? startY : currentY) + 'px';
+        }
+
+        async function endDrag() {
+            if (!isDragging) return;
+            isDragging = false;
+            
+            const rect = cropBox.getBoundingClientRect();
+            if (rect.width < 20 || rect.height < 20) {
+                cropBox.style.display = 'none';
+                return;
             }
 
-            showState('processing');
+            analyzeCrop(rect);
+        }
 
+        // 3. Image Analysis
+        async function analyzeCrop(rect) {
+            states.processing.classList.remove('hidden');
+            states.instruction.classList.add('hidden');
+
+            // 좌표 변환 (화면 좌표 -> 비디오 해상도 좌표)
+            const scaleX = video.videoWidth / window.innerWidth;
+            const scaleY = video.videoHeight / window.innerHeight;
+
+            const ctx = cropCanvas.getContext('2d');
+            cropCanvas.width = rect.width * scaleX;
+            cropCanvas.height = rect.height * scaleY;
+
+            ctx.drawImage(
+                video, 
+                rect.left * scaleX, rect.top * scaleY, rect.width * scaleX, rect.height * scaleY,
+                0, 0, cropCanvas.width, cropCanvas.height
+            );
+
+            const base64Image = cropCanvas.toDataURL('image/png').split(',')[1];
+            
             try {
-                const prompt = `이 우편물 사진에서 '발송처(보낸 사람)'와 '주요 내용'을 추출해줘. 
-                그리고 다음 부서 중 가장 적합한 곳을 하나 골라줘: [${DEPARTMENTS.join(', ')}]. 
-                결과는 반드시 JSON 형식으로만 보내줘: {"sender": "발송처", "summary": "내용 요약", "department": "선택된 부서"}`;
+                const prompt = `이 잘린 이미지 안의 글자를 읽어서 '발송처'를 파악해줘. 
+                내용이 무엇인지 요약하고, 다음 부서 중 하나로 분류해: [${DEPARTMENTS.join(', ')}]. 
+                결과는 반드시 JSON: {"sender": "이름", "summary": "요약", "department": "부서"}`;
 
                 const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
                     method: 'POST',
@@ -205,45 +205,55 @@
                         contents: [{
                             parts: [
                                 { text: prompt },
-                                { inlineData: { mimeType: "image/png", data: imageData } }
+                                { inlineData: { mimeType: "image/png", data: base64Image } }
                             ]
                         }]
                     })
                 });
-                
+
                 const data = await response.json();
                 const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-                
-                // JSON 추출 로직 강화
-                const jsonMatch = text.match(/\{[\s\S]*\}/);
-                
+                const jsonMatch = text.match(/\{.*\}/s);
+
                 if (jsonMatch) {
                     currentResult = JSON.parse(jsonMatch[0]);
-                    document.getElementById('res-sender').innerText = currentResult.sender || '확인 불가';
-                    document.getElementById('res-dept').innerText = currentResult.department || '미분류';
-                    document.getElementById('res-summary').innerText = currentResult.summary || '내용 요약 없음';
-                    showState('result');
+                    showResult(currentResult);
                 } else {
-                    throw new Error("분석 결과를 이해할 수 없습니다.");
+                    throw new Error("인식 실패");
                 }
-            } catch (error) {
-                console.error("Analysis failed:", error);
-                alert("분석 실패: " + error.message);
+            } catch (err) {
+                alert("분석에 실패했습니다. API 키를 확인하거나 다시 시도해주세요.");
                 reset();
+            } finally {
+                states.processing.classList.add('hidden');
             }
         }
 
+        function showResult(res) {
+            document.getElementById('res-sender').innerText = res.sender;
+            document.getElementById('res-dept').innerText = res.department;
+            document.getElementById('res-summary').innerText = res.summary;
+            states.result.classList.remove('hidden');
+            cropBox.style.borderColor = '#10b981'; // Success green
+            cropBox.style.background = 'transparent';
+        }
+
         function sendEmail() {
-            if (!currentResult) return;
-            const subject = encodeURIComponent(`[우편물 분류] ${currentResult.sender} 도착 알림`);
-            const body = encodeURIComponent(`안녕하세요.\n\n새로운 우편물이 도착했습니다.\n\n- 발송처: ${currentResult.sender}\n- 분류부서: ${currentResult.department}\n- 주요내용: ${currentResult.summary}\n\n사무실 입구 우편함에서 확인 부탁드립니다.`);
-            window.location.href = `mailto:office@company.com?subject=${subject}&body=${body}`;
+            const sub = encodeURIComponent(`[우편물] ${currentResult.sender} 도착`);
+            const body = encodeURIComponent(`${currentResult.department} 담당자님,\n\n${currentResult.sender}에서 온 우편물이 분류되었습니다.\n\n요약: ${currentResult.summary}`);
+            window.location.href = `mailto:office@company.com?subject=${sub}&body=${body}`;
         }
 
         function reset() {
             currentResult = null;
-            showState('idle');
+            states.result.classList.add('hidden');
+            states.instruction.classList.remove('hidden');
+            cropBox.style.display = 'none';
+            cropBox.style.borderColor = '#3b82f6';
+            cropBox.style.background = 'rgba(59, 130, 246, 0.2)';
         }
+
+        init();
     </script>
 </body>
 </html>
