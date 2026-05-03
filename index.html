@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>우편물 자동 분류 시스템</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@400;600;700&display=swap');
+        body { font-family: 'Pretendard', sans-serif; }
+        .scanning-line {
+            height: 2px;
+            background: linear-gradient(to right, transparent, #3b82f6, transparent);
+            animation: scan 2s linear infinite;
+            position: absolute;
+            width: 100%;
+            z-index: 10;
+        }
+        @keyframes scan {
+            0% { top: 0; }
+            100% { top: 100%; }
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 min-h-screen">
+
+    <div class="max-w-md mx-auto p-4">
+        <!-- Header -->
+        <header class="text-center mb-6 mt-4">
+            <div class="inline-flex items-center justify-center w-14 h-14 bg-blue-600 rounded-2xl shadow-lg shadow-blue-200 mb-3">
+                <i data-lucide="mail" class="text-white w-8 h-8"></i>
+            </div>
+            <h1 class="text-2xl font-bold text-slate-800">우편물 분류 파트너</h1>
+            <p class="text-slate-500 text-sm mt-1">AI가 우편물을 분석하여 담당 부서를 찾아줍니다.</p>
+        </header>
+
+        <!-- Main Card -->
+        <main class="bg-white rounded-[2.5rem] shadow-2xl shadow-slate-200 overflow-hidden border border-slate-100 relative">
+            
+            <!-- Camera/Preview Viewport -->
+            <div id="viewport" class="relative aspect-[3/4] bg-slate-900 flex items-center justify-center overflow-hidden">
+                
+                <!-- Initial State -->
+                <div id="state-idle" class="flex flex-col items-center gap-4 text-center px-6">
+                    <div id="camera-error" class="hidden text-red-400 text-sm mb-2 bg-red-950/30 p-3 rounded-xl border border-red-900/30">
+                        <i data-lucide="alert-triangle" class="w-5 h-5 mx-auto mb-1"></i>
+                        <span id="error-message">카메라 접근 권한이 없거나 보안 연결이 필요합니다.</span>
+                    </div>
+                    <button onclick="startCamera()" class="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-2xl font-bold flex items-center gap-3 transition-all transform active:scale-95 shadow-xl shadow-blue-100">
+                        <i data-lucide="camera" class="w-5 h-5"></i> 카메라 시작하기
+                    </button>
+                    <p class="text-slate-500 text-[11px] mt-2 italic">웹 브라우저의 카메라 권한 허용이 필요합니다.</p>
+                </div>
+
+                <!-- Streaming State -->
+                <div id="state-streaming" class="hidden w-full h-full">
+                    <video id="video" autoPlay playsInline class="w-full h-full object-cover"></video>
+                    <div class="scanning-line"></div>
+                    <div class="absolute inset-0 border-[20px] border-black/20 pointer-events-none"></div>
+                    <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <div class="w-64 h-80 border-2 border-dashed border-white/50 rounded-2xl"></div>
+                    </div>
+                    <button onclick="captureAndAnalyze()" class="absolute bottom-8 left-1/2 -translate-x-1/2 w-20 h-20 bg-white rounded-full p-1 shadow-2xl active:scale-90 transition-transform">
+                        <div class="w-full h-full rounded-full border-4 border-slate-900 flex items-center justify-center">
+                            <div class="w-12 h-12 bg-blue-600 rounded-full"></div>
+                        </div>
+                    </button>
+                </div>
+
+                <!-- Processing State -->
+                <div id="state-processing" class="hidden flex flex-col items-center gap-5 text-white text-center p-8">
+                    <div class="relative">
+                        <div class="w-16 h-16 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div>
+                        <i data-lucide="search" class="absolute inset-0 m-auto w-6 h-6 text-blue-400"></i>
+                    </div>
+                    <div>
+                        <p class="text-xl font-bold">우편물 분석 중...</p>
+                        <p class="text-blue-300/80 text-sm mt-1 font-medium">AI가 텍스트를 정밀 분석하고 있습니다</p>
+                    </div>
+                </div>
+
+                <!-- Result State -->
+                <div id="state-result" class="hidden absolute inset-0 bg-white p-8 overflow-y-auto">
+                    <div class="flex items-center gap-2 text-emerald-600 font-bold mb-6">
+                        <i data-lucide="check-circle-2" class="w-5 h-5"></i> 분석 완료
+                    </div>
+
+                    <div class="space-y-6">
+                        <div>
+                            <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">발송처</label>
+                            <p id="res-sender" class="text-xl font-extrabold text-slate-800 leading-tight">-</p>
+                        </div>
+                        <div>
+                            <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">배정 부서</label>
+                            <div id="res-dept" class="inline-flex items-center bg-blue-600 text-white px-4 py-1.5 rounded-full font-bold text-sm shadow-md shadow-blue-100">
+                                -
+                            </div>
+                        </div>
+                        <div>
+                            <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">내용 요약</label>
+                            <div class="bg-slate-50 border border-slate-100 rounded-2xl p-4">
+                                <p id="res-summary" class="text-slate-600 text-sm leading-relaxed italic">-</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-10 space-y-3">
+                        <button onclick="sendEmail()" class="w-full bg-slate-900 hover:bg-black text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-3 transition-colors">
+                            <i data-lucide="send" class="w-5 h-5"></i> 이메일 알림 전송
+                        </button>
+                        <button onclick="reset()" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-600 py-4 rounded-2xl font-bold flex items-center justify-center gap-3 transition-colors text-sm">
+                            <i data-lucide="refresh-cw" class="w-4 h-4"></i> 다시 스캔하기
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <footer class="mt-8 px-4 text-center">
+            <div class="inline-flex items-center gap-2 text-slate-400 text-[10px] font-bold tracking-widest uppercase bg-white py-2 px-4 rounded-full border border-slate-100">
+                Powered by Gemini 2.5 Flash
+            </div>
+        </footer>
+    </div>
+
+    <canvas id="canvas" class="hidden"></canvas>
+
+    <script>
+        const apiKey = ""; 
+        const DEPARTMENTS = ['회계부', '인사부', '영업부', '총무부', 'IT지원팀'];
+        
+        let stream = null;
+        let currentResult = null;
+
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const states = {
+            idle: document.getElementById('state-idle'),
+            streaming: document.getElementById('state-streaming'),
+            processing: document.getElementById('state-processing'),
+            result: document.getElementById('state-result')
+        };
+        const cameraError = document.getElementById('camera-error');
+        const errorMessage = document.getElementById('error-message');
+
+        lucide.createIcons();
+
+        function showState(stateName) {
+            Object.keys(states).forEach(key => {
+                states[key].classList.toggle('hidden', key !== stateName);
+            });
+        }
+
+        async function startCamera() {
+            cameraError.classList.add('hidden');
+            try {
+                // 엄격한 HTTPS 체크 대신, 사용 가능한지 직접 시도
+                const constraints = {
+                    video: { 
+                        facingMode: 'environment', 
+                        width: { ideal: 1280 }, 
+                        height: { ideal: 720 } 
+                    }
+                };
+
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = stream;
+                showState('streaming');
+            } catch (err) {
+                console.error("Camera access error:", err);
+                cameraError.classList.remove('hidden');
+                
+                if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+                    errorMessage.innerHTML = "<strong>보안 에러:</strong> 카메라 기능은 HTTPS 주소에서만 작동합니다.<br>파일을 온라인 서버(Netlify 등)에 올려서 확인해 주세요.";
+                } else {
+                    errorMessage.innerText = "카메라 권한이 거부되었습니다. 브라우저 설정에서 카메라 접근을 허용해 주세요.";
+                }
+            }
+        }
+
+        async function captureAndAnalyze() {
+            if (!video.videoWidth) return;
+            const context = canvas.getContext('2d');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            context.drawImage(video, 0, 0);
+            const imageData = canvas.toDataURL('image/png').split(',')[1];
+            
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+
+            showState('processing');
+
+            try {
+                const prompt = `이 우편물 사진에서 '발송처(보낸 사람)'와 '주요 내용'을 추출해줘. 
+                그리고 다음 부서 중 가장 적합한 곳을 하나 골라줘: [${DEPARTMENTS.join(', ')}]. 
+                결과는 반드시 JSON 형식으로만 보내줘: {"sender": "발송처", "summary": "내용 요약", "department": "선택된 부서"}`;
+
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{
+                            parts: [
+                                { text: prompt },
+                                { inlineData: { mimeType: "image/png", data: imageData } }
+                            ]
+                        }]
+                    })
+                });
+                
+                const data = await response.json();
+                const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                
+                // JSON 추출 로직 강화
+                const jsonMatch = text.match(/\{[\s\S]*\}/);
+                
+                if (jsonMatch) {
+                    currentResult = JSON.parse(jsonMatch[0]);
+                    document.getElementById('res-sender').innerText = currentResult.sender || '확인 불가';
+                    document.getElementById('res-dept').innerText = currentResult.department || '미분류';
+                    document.getElementById('res-summary').innerText = currentResult.summary || '내용 요약 없음';
+                    showState('result');
+                } else {
+                    throw new Error("분석 결과를 이해할 수 없습니다.");
+                }
+            } catch (error) {
+                console.error("Analysis failed:", error);
+                alert("분석 실패: " + error.message);
+                reset();
+            }
+        }
+
+        function sendEmail() {
+            if (!currentResult) return;
+            const subject = encodeURIComponent(`[우편물 분류] ${currentResult.sender} 도착 알림`);
+            const body = encodeURIComponent(`안녕하세요.\n\n새로운 우편물이 도착했습니다.\n\n- 발송처: ${currentResult.sender}\n- 분류부서: ${currentResult.department}\n- 주요내용: ${currentResult.summary}\n\n사무실 입구 우편함에서 확인 부탁드립니다.`);
+            window.location.href = `mailto:office@company.com?subject=${subject}&body=${body}`;
+        }
+
+        function reset() {
+            currentResult = null;
+            showState('idle');
+        }
+    </script>
+</body>
+</html>
